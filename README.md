@@ -20,9 +20,9 @@ tune the **existing** value by swiping up or down ;)*
 Upon touch it registers the initial touch starting coordinates and sets a large
 initial dampening factor for all value changes. Then, while you move away from
 this starting point (in x or y direction, with respect to whether you are
-changing a fader, or an XY control value), it gradually increases the dampening
+changing a fader, or an XY control value), it gradually reduces the dampening
 factor until it reaches a normal input factor of 1.0. The dampening factor will
-*only increase*, so it will not decrease again when you fade back in the other
+*only decrease*, so it will not ramp up again when you fade back in the other
 direction, the purpose of this being to initially have extremely fine control of
 the fader value, and then with moving re-establish normal value sensitivity for
 the input :)
