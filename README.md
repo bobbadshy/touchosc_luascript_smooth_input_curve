@@ -33,9 +33,7 @@ Check the
 [Releases](https://github.com/bobbadshy/touchosc_luascript_smooth_input_curve/releases)
 section.
 
-### Demo .tosc file
-
-Current demo surface:
+Or, directly download the current demo .tosc file:
 - [demo.tosc](https://github.com/bobbadshy/touchosc_luascript_smooth_input_curve/raw/refs/heads/main/demo.tosc)
 
 Many thanx and Enjoy!
