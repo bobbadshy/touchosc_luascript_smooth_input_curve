@@ -13,6 +13,10 @@ synthesizer controls or knobs.
 The LUA script in this repository aims to rectify this by provoding a smoother
 initial input curve:
 
+***Important:** Currently, the script works for **relative** faders and XY
+controls only, cause well ..that is where it makes sense ..when you want to fine
+tune the **existing** value by swiping up or down ;)*
+
 Upon touch it registers the initial touch starting coordinates and sets a large
 initial dampening factor for all value changes. Then, while you move away from
 this starting point (in x or y direction, with respect to whether you are
