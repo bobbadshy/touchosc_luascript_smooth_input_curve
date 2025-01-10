@@ -23,8 +23,14 @@ direction, the purpose of this being to initially have extremely fine control of
 the fader value, and then with moving re-establish normal value sensitivity for
 the input :)
 
+## Features
+
+**High precision:**
 - For faders with "Relative" response, this results in high-precision fine control of value at touch start
 - For faders with "Absolute" response, the resulting behaviour is best described as "lazy" value updating, i.e. the value will smoothly fade towards the touch point.
+
+**Reset on double tap:**
+- In addition, the script also includes an optional "reset to default or zero value" on double tapping the control.
 
 ## Download
 
