@@ -9,6 +9,13 @@ local l8 = self.children.l8.properties
 local l9 = self.children.l9.properties
 
 local matrix = {
+  clear = {
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+  },
   d0 = {
     8, 8, 8,
     8, 0, 8,
@@ -179,9 +186,11 @@ end
 
 function onReceiveNotify(c,v)
   if c == 'update' then
-    self.parent.children.button.values.x = 0.7
+    self.children.button.values.x = 1
     local s = 'd' .. v
-    print('MATRIX: ' .. s)
     applyMatrix(matrix[s])
+  elseif c == 'clear' then
+    self.children.button.values.x = 1
+    applyMatrix('clear')
   end
 end
