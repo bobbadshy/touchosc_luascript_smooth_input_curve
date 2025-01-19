@@ -1,5 +1,6 @@
+--[[START ctrl_midi_lbl.lua]]
 ---@diagnostic disable: lowercase-global, undefined-global
--- ####################
+-- ##########
 -- Small script to:
 --
 -- - Ensure high-precision input on initial touch. With moving, input gradually
@@ -12,59 +13,92 @@
 --   text control. Specify the optional real range and the respective text
 --   control below in the config.
 --
--- ####################
+-- ##########
 
 -- #####
 -- Config:
---
-local sensitivity = 1.5 -- Initial sensitivity (from 0.2 coarse to 10 for super high precision)
-local enableDoubleTap = false -- enable double-tap behaviour
-local tapDelay = 300 -- Delay for registering a double-tap
-local valueLabelControl = nil -- pass label or text control here, if desired
-local realValue = {
-  low = nil,
-  high = nil,
-  precision  = 1,
+local config = {
+  sens = 1.5, -- Initial sensitivity (from 0.2 coarse to 10 for super high precision)
+  lblControlName = 'midi', -- pass name label or text control here, to show value
+  low = 0,
+  high = 127,
   min = nil,
-  max = nil
+  max = nil,
+  decimals = 0,
+  unit = '',
+  type = MIDI,
+  doubleTap = true, -- enable double-tap behaviour
+  tapDelay = 300, -- Delay for registering a double-tap
 }
--- #####
--- Example for real value specs:
---
--- Scale the control value in the range -100.5 to +85.
--- Use a precision of 100 (2 decimal places)
--- But, cut the final value at lower boundary -100 and upper +85
--- (The extra cut boundaries min and max allow to corret for a possibly
--- imprecise mapping of MIDI value to the actual range in the target
--- instrument.)
---
---   local realValue = {
---     low = -100.5,
---     high = 85,
---     precision  = 100,
---     min = -100,
---     max = 85
---   }
--- #####
-
 
 -- #####
--- # No changes needed after this point :) 
+-- # No changes needed after this point
 -- #####
+
+MIDI = 0
+LINEAR = 1
+LOG = 2
+CMD_CONFIG = 'cmdConfig'
 
 local zero_x
 local zero_y
 local horz_x = nil
 local scale = 0
 local lastTap = 0
+local configSet = false
 
--- #####
--- This ensures that for:
--- - vertical faders, and
--- - 90 degrees rotated XY controls (EAST, WEST)
---
--- we use the screen Y axis! to measure start point distance
--- #####
+function onReceiveNotify(c,v)
+  if c == CMD_CONFIG then
+    -- print('Got config!')
+    config = json.toTable(v)
+    if config.sens == nil then config.sens = 1.5 end
+    if config.lblControlName == nil then config.lblControlName = nil end
+    if config.low == nil then config.low = 0 end
+    if config.high == nil then config.high = 127 end
+    if config.min == nil then config.min = nil end
+    if config.max == nil then config.max = nil end
+    if config.decimals == nil then config.decimals = 0 end
+    if config.unit == nil then config.unit = '' end
+    if config.type == nil then config.type = MIDI end
+    if config.doubleTap == nil then config.doubleTap = true end
+    if config.tapDelay == nil then config.tapDelay = 300 end
+    config.sens = tonumber(config.sens)
+    config.lblControlName = tostring(config.lblControlName)
+    config.low = tonumber(config.low)
+    config.high = tonumber(config.high)
+    config.min = tonumber(config.min)
+    config.max = tonumber(config.max)
+    config.decimals = tonumber(config.decimals)
+    config.unit = tostring(config.unit)
+    configSet = true
+  end
+end
+
+function onValueChanged(k)
+  -- Check for double-tap
+  if k == 'touch' and not self.values.touch then _checkForDoubleTap() end
+  -- Send true value to label control
+  if k == 'x' or k == 'y' then _showTrueValue(self.values[k]) end
+  -- break if we don't have a pointer (programmatic value update)
+  if self.pointers[1] == nil then return end
+  -- initialize orientation
+  if horz_x == nil then _getOrientation() end
+  -- start smoothing value
+  _calcSmoothValue(k)
+end
+
+function _calcSmoothValue(k)
+  if k == 'touch' and self.values.touch then
+    _setStartPoint()
+  elseif k == 'x' or k == 'y' and self.values.touch then
+    -- process current pointer position
+    scale = _getScaleFactor()
+    local lastValue = self:getValueField(k, ValueField.LAST)
+    local delta = (self.values[k] - lastValue) * scale
+    self.values[k] = lastValue + delta
+  end
+end
+
 function _getOrientation()
   horz_x = true
   if (
@@ -75,7 +109,13 @@ function _getOrientation()
     if self.type == ControlType.FADER then horz_x = false end
   else
     -- 90 degrees rotated XY control!
-    if self.type == ControlType.XY then horz_x = false end
+    if (
+      self.type == ControlType.XY or
+      self.type == ControlType.RADIAL or
+      self.type == ControlType.ENCODER
+    ) then
+      horz_x = false
+    end
   end
 end
 
@@ -93,36 +133,53 @@ function _resetValuesToDefault()
 end
 
 function _showTrueValue(val)
-  if valueLabelControl == nil then return end
+  if config.lblControlName == nil then return end
+  local ctrl = self.parent.children[config.lblControlName]
+  if ctrl == nil then return end
+  local r = _calcRealValue(val)
   local s
-  if realValue == nil then
-    -- just show x or y with 4 decimals
-    s = string.format('%.4f', val)
+  if config.decimals > 0 then
+    s = string.format('%.' .. config.decimals .. 'f', r)
   else
-    s = string.format('%.1f', _calcRealValue(val))
+    s = r
   end
-  valueLabelControl.values.text = s
+  if config.unit ~= '' then  
+    s = s .. ' ' .. config.unit
+  end
+  ctrl.values.text = s
 end
 
 function _calcRealValue(val)
-  local i = realValue.low
-  local j = realValue.high
-  -- do nothing if low or high is missing
-  if i == nil or j == nil then return val end
-  local p = realValue.precision
-  if p == nil then p = 1 end
-  local min = realValue.min
-  local max = realValue.max
-  if min == nil then min = i end
-  if max == nil then max = j end
-  local d = j-i
-  return math.min(max, math.max(min, math.floor(val*d*p+0.5)/p+i))
+  local v = math.floor(val*127+0.5)/127 -- snap to midi values
+  local decimals = 10^config.decimals
+  if config.type == LINEAR then
+    local low = config.low
+    local high = config.high
+    if low == nil or high == nil then return _showAsMidi(v) end
+    local min = config.min
+    local max = config.max
+    if min == nil then min = low end
+    if max == nil then max = high end
+    local delta = high - low
+    return math.min(
+      max, math.max(
+        min, math.floor(v * delta * decimals +0.5 ) / decimals + low
+    ))
+  elseif config.type == LOG then
+    return decimals * math.log(v)
+  end
+  -- return as MIDI by default
+  return _showAsMidi(v)
+end
+
+function _showAsMidi(val)
+  return math.floor(0.5+val*127)
 end
 
 function _checkForDoubleTap()
-  if enableDoubleTap then
+  if config.doubleTap then
     local now = getMillis()
-    if(now - lastTap < tapDelay) then
+    if(now - lastTap < config.tapDelay) then
       _resetValuesToDefault()
       lastTap = 0
     else
@@ -139,38 +196,24 @@ end
 
 function _getScaleFactor()
   local rel, max
-  if (k == 'x' and not horz_x) or (k == 'y' and horz_x) then
-    max = self.frame.h * sensitivity
+  if (
+    self.type == ControlType.RADIAL or
+    self.type == ControlType.ENCODER
+  ) then
+    max = ((self.frame.h * config.sens)^2 + (self.frame.w * config.sens)^2)^0.5
+    rel = ((self.pointers[1].y - zero_y)^2 + (self.pointers[1].x - zero_x)^2)^0.5
+  elseif (k == 'x' and not horz_x) or (k == 'y' and horz_x) then
+    max = self.frame.h * config.sens
     rel = self.pointers[1].y - zero_y
   else
-    max = self.frame.w * sensitivity
+    max = self.frame.w * config.sens
     rel = self.pointers[1].x - zero_x
   end
   if math.abs(rel) <= 0 then
     -- If not moved, yet, use value delta to calculate scale
     -- For absolute faders, this ensures movement start on touch begin
-    rel = rel + (max * (scale + 0.02) / sensitivity)
+    rel = rel + (max * (scale + 0.02) / config.sens)
   end
   return math.max(0, scale, math.min(1, math.abs(rel/max)))
-
 end
-
-function onValueChanged(k)
-  -- Check for double-tap
-  if k == 'touch' and not self.values.touch then _checkForDoubleTap() end
-  -- Send true value to label control
-  if k == 'x' or k == 'y' then _showTrueValue(self.values[k]) end
-  -- break if we don't have a pointer (programmatic value update)
-  if self.pointers[1] == nil then return end
-  -- initialize orientation
-  if horz_x == nil then _getOrientation() end
-  -- start smoothing value
-  if k == 'touch' and self.values.touch then
-    _setStartPoint()
-  elseif k == 'x' or k == 'y' and self.values.touch then
-    -- process current pointer position
-    local lastValue = self:getValueField(k, ValueField.LAST)
-    local delta = (self.values[k] - lastValue) * _getScaleFactor()
-    self.values[k] = lastValue + delta
-  end
-end
+--[[END ctrl_midi_lbl.lua]]
